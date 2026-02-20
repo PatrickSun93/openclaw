@@ -9,6 +9,7 @@ import {
   resolveSessionTranscriptsDirForAgent,
 } from "../config/sessions/paths.js";
 import type { SessionEntry } from "../config/sessions/types.js";
+import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
 import { countToolResults, extractToolCallNames } from "../utils/transcript-tools.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
 import type {
@@ -332,34 +333,37 @@ export async function loadCostUsageSummary(params?: {
     )
   ).filter((filePath): filePath is string => Boolean(filePath));
 
-  for (const filePath of files) {
-    await scanUsageFile({
-      filePath,
-      config: params?.config,
-      onEntry: (entry) => {
-        const ts = entry.timestamp?.getTime();
-        if (!ts || ts < sinceTime || ts > untilTime) {
-          return;
-        }
-        const dayKey = formatDayKey(entry.timestamp ?? now);
-        const bucket = dailyMap.get(dayKey) ?? emptyTotals();
-        applyUsageTotals(bucket, entry.usage);
-        if (entry.costBreakdown?.total !== undefined) {
-          applyCostBreakdown(bucket, entry.costBreakdown);
-        } else {
-          applyCostTotal(bucket, entry.costTotal);
-        }
-        dailyMap.set(dayKey, bucket);
+  const tasks = files.map(
+    (filePath) => () =>
+      scanUsageFile({
+        filePath,
+        config: params?.config,
+        onEntry: (entry) => {
+          const ts = entry.timestamp?.getTime();
+          if (!ts || ts < sinceTime || ts > untilTime) {
+            return;
+          }
+          const dayKey = formatDayKey(entry.timestamp ?? now);
+          const bucket = dailyMap.get(dayKey) ?? emptyTotals();
+          applyUsageTotals(bucket, entry.usage);
+          if (entry.costBreakdown?.total !== undefined) {
+            applyCostBreakdown(bucket, entry.costBreakdown);
+          } else {
+            applyCostTotal(bucket, entry.costTotal);
+          }
+          dailyMap.set(dayKey, bucket);
 
-        applyUsageTotals(totals, entry.usage);
-        if (entry.costBreakdown?.total !== undefined) {
-          applyCostBreakdown(totals, entry.costBreakdown);
-        } else {
-          applyCostTotal(totals, entry.costTotal);
-        }
-      },
-    });
-  }
+          applyUsageTotals(totals, entry.usage);
+          if (entry.costBreakdown?.total !== undefined) {
+            applyCostBreakdown(totals, entry.costBreakdown);
+          } else {
+            applyCostTotal(totals, entry.costTotal);
+          }
+        },
+      }),
+  );
+
+  await runTasksWithConcurrency({ tasks, limit: 50 });
 
   const daily = Array.from(dailyMap.entries())
     .map(([date, bucket]) => Object.assign({ date }, bucket))
