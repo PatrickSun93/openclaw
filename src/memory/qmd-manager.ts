@@ -1204,11 +1204,16 @@ export class QmdMemoryManager implements MemorySearchManager {
       `qmd query multi-collection workaround active (${collectionNames.length} collections)`,
     );
     const bestByDocId = new Map<string, QmdQueryResult>();
-    for (const collectionName of collectionNames) {
+    const promises = collectionNames.map(async (collectionName) => {
       const args = this.buildSearchArgs("query", query, limit);
       args.push("-c", collectionName);
       const result = await this.runQmd(args, { timeoutMs: this.qmd.limits.timeoutMs });
-      const parsed = parseQmdQueryJson(result.stdout, result.stderr);
+      return parseQmdQueryJson(result.stdout, result.stderr);
+    });
+
+    const results = await Promise.all(promises);
+
+    for (const parsed of results) {
       for (const entry of parsed) {
         if (typeof entry.docid !== "string" || !entry.docid.trim()) {
           continue;
