@@ -31,16 +31,15 @@ export type HybridKeywordResult = {
 };
 
 export function buildFtsQuery(raw: string): string | null {
-  const tokens =
-    raw
-      .match(/[\p{L}\p{N}_]+/gu)
-      ?.map((t) => t.trim())
-      .filter(Boolean) ?? [];
-  if (tokens.length === 0) {
+  // Optimization: The regex [\p{L}\p{N}_]+ guarantees that matches are non-empty
+  // and contain only letters, numbers, and underscores.
+  // Thus, trim() and replaceAll('"', "") are redundant.
+  // This avoids creating 3 intermediate arrays (map, filter, map) and string replacements.
+  const tokens = raw.match(/[\p{L}\p{N}_]+/gu);
+  if (!tokens || tokens.length === 0) {
     return null;
   }
-  const quoted = tokens.map((t) => `"${t.replaceAll('"', "")}"`);
-  return quoted.join(" AND ");
+  return tokens.map((t) => `"${t}"`).join(" AND ");
 }
 
 export function bm25RankToScore(rank: number): number {
