@@ -6,6 +6,7 @@ import {
   assertWebChannel,
   CONFIG_DIR,
   ensureDir,
+  isSelfChatMode,
   jidToE164,
   normalizeE164,
   normalizePath,
@@ -79,6 +80,43 @@ describe("normalizeE164 & toWhatsappJid", () => {
     expect(toWhatsappJid("123456789-987654321@g.us")).toBe("123456789-987654321@g.us");
     expect(toWhatsappJid("whatsapp:123456789-987654321@g.us")).toBe("123456789-987654321@g.us");
     expect(toWhatsappJid("1555123@s.whatsapp.net")).toBe("1555123@s.whatsapp.net");
+  });
+});
+
+describe("isSelfChatMode", () => {
+  it("returns false when selfE164 is missing", () => {
+    expect(isSelfChatMode(null)).toBe(false);
+    expect(isSelfChatMode(undefined)).toBe(false);
+    expect(isSelfChatMode("")).toBe(false);
+  });
+
+  it("returns false when allowFrom is missing or empty", () => {
+    expect(isSelfChatMode("+15551234567", null)).toBe(false);
+    expect(isSelfChatMode("+15551234567", undefined)).toBe(false);
+    expect(isSelfChatMode("+15551234567", [])).toBe(false);
+  });
+
+  it("returns true when selfE164 is in allowFrom", () => {
+    expect(isSelfChatMode("+15551234567", ["+15551234567"])).toBe(true);
+    expect(isSelfChatMode("+15551234567", ["+15550000000", "+15551234567"])).toBe(true);
+  });
+
+  it("handles normalization", () => {
+    expect(isSelfChatMode("+15551234567", ["15551234567"])).toBe(true);
+    expect(isSelfChatMode("15551234567", ["+15551234567"])).toBe(true);
+    expect(isSelfChatMode("whatsapp:+15551234567", ["+15551234567"])).toBe(true);
+  });
+
+  it("ignores wildcard in allowFrom", () => {
+    expect(isSelfChatMode("+15551234567", ["*"])).toBe(false);
+    // It should still match other numbers
+    expect(isSelfChatMode("+15551234567", ["*", "+15551234567"])).toBe(true);
+  });
+
+  it("handles invalid entries in allowFrom gracefully", () => {
+    expect(isSelfChatMode("+15551234567", ["invalid"])).toBe(false);
+    expect(isSelfChatMode("+15551234567", [12345])).toBe(false);
+    expect(isSelfChatMode("+15551234567", [15551234567])).toBe(true);
   });
 });
 
