@@ -170,7 +170,7 @@ describe("buildInboundUserContextPrefix", () => {
     const conversationInfo = parseConversationInfoPayload(text);
     expect(conversationInfo["message_id"]).toBe("short-id");
     expect(conversationInfo["message_id_full"]).toBeUndefined();
-    expect(conversationInfo["sender"]).toBe("+15551234567");
+    expect(conversationInfo["sender"]).toBeUndefined();
     expect(conversationInfo["conversation_label"]).toBeUndefined();
   });
 
@@ -195,7 +195,7 @@ describe("buildInboundUserContextPrefix", () => {
 
     const conversationInfo = parseConversationInfoPayload(text);
     expect(conversationInfo["message_id"]).toBe("123");
-    expect(conversationInfo["sender_id"]).toBe("openclaw-control-ui");
+    expect(conversationInfo["sender_id"]).toBeUndefined();
     expect(conversationInfo["conversation_label"]).toBe("some-label");
   });
 
@@ -209,14 +209,14 @@ describe("buildInboundUserContextPrefix", () => {
     expect(text).toContain('"conversation_label": "ops-room"');
   });
 
-  it("includes sender identifier in conversation info", () => {
+  it("does not expose e164 as sender in conversation info", () => {
     const text = buildInboundUserContextPrefix({
       ChatType: "group",
       SenderE164: " +15551234567 ",
     } as TemplateContext);
 
     const conversationInfo = parseConversationInfoPayload(text);
-    expect(conversationInfo["sender"]).toBe("+15551234567");
+    expect(conversationInfo["sender"]).toBeUndefined();
   });
 
   it("prefers SenderName in conversation info sender identity", () => {
@@ -230,7 +230,7 @@ describe("buildInboundUserContextPrefix", () => {
     expect(conversationInfo["sender"]).toBe("Tyler");
   });
 
-  it("includes sender metadata block for direct chats", () => {
+  it("uses pseudonymous sender label for direct chats (#60448)", () => {
     const text = buildInboundUserContextPrefix({
       ChatType: "direct",
       SenderName: "Tyler",
@@ -238,8 +238,9 @@ describe("buildInboundUserContextPrefix", () => {
     } as TemplateContext);
 
     const senderInfo = parseSenderInfoPayload(text);
-    expect(senderInfo["label"]).toBe("Tyler (+15551234567)");
-    expect(senderInfo["id"]).toBe("+15551234567");
+    expect(senderInfo["label"]).toBe("User");
+    expect(senderInfo["id"]).toBeUndefined();
+    expect(senderInfo["name"]).toBeUndefined();
   });
 
   it("includes formatted timestamp in conversation info when provided", () => {
@@ -336,7 +337,7 @@ describe("buildInboundUserContextPrefix", () => {
     expect(conversationInfo["reply_to_id"]).toBe("msg-199");
   });
 
-  it("includes sender_id in conversation info", () => {
+  it("suppresses sender_id from conversation info (#60448)", () => {
     const text = buildInboundUserContextPrefix({
       ChatType: "group",
       MessageSid: "msg-456",
@@ -344,7 +345,7 @@ describe("buildInboundUserContextPrefix", () => {
     } as TemplateContext);
 
     const conversationInfo = parseConversationInfoPayload(text);
-    expect(conversationInfo["sender_id"]).toBe("289522496");
+    expect(conversationInfo["sender_id"]).toBeUndefined();
   });
 
   it("includes dynamic per-turn flags in conversation info", () => {
@@ -366,24 +367,46 @@ describe("buildInboundUserContextPrefix", () => {
     expect(conversationInfo["history_count"]).toBe(1);
   });
 
-  it("trims sender_id in conversation info", () => {
-    const text = buildInboundUserContextPrefix({
-      ChatType: "group",
-      MessageSid: "msg-457",
-      SenderId: "  289522496  ",
-    } as TemplateContext);
-
-    const conversationInfo = parseConversationInfoPayload(text);
-    expect(conversationInfo["sender_id"]).toBe("289522496");
-  });
-
-  it("falls back to SenderId when sender phone is missing", () => {
+  it("does not fall back to SenderId for sender in group chats (#60448)", () => {
     const text = buildInboundUserContextPrefix({
       ChatType: "group",
       SenderId: " user@example.com ",
     } as TemplateContext);
 
     const conversationInfo = parseConversationInfoPayload(text);
-    expect(conversationInfo["sender"]).toBe("user@example.com");
+    expect(conversationInfo["sender"]).toBeUndefined();
+    expect(conversationInfo["sender_id"]).toBeUndefined();
+  });
+
+  it("suppresses id and e164 from sender block in group chats (#60448)", () => {
+    const text = buildInboundUserContextPrefix({
+      ChatType: "group",
+      SenderName: "Amanda",
+      SenderId: "1906591603",
+      SenderUsername: "djbabypanda",
+      SenderE164: "+15551234567",
+    } as TemplateContext);
+
+    const senderInfo = parseSenderInfoPayload(text);
+    expect(senderInfo["name"]).toBe("Amanda");
+    expect(senderInfo["username"]).toBe("djbabypanda");
+    expect(senderInfo["id"]).toBeUndefined();
+    expect(senderInfo["e164"]).toBeUndefined();
+  });
+
+  it("uses pseudonymous sender for direct Telegram chats (#60448)", () => {
+    const text = buildInboundUserContextPrefix({
+      ChatType: "direct",
+      OriginatingChannel: "telegram",
+      SenderName: "Amanda Schwartz Ramirez",
+      SenderId: "1906591603",
+      SenderUsername: "djbabypanda",
+    } as TemplateContext);
+
+    const senderInfo = parseSenderInfoPayload(text);
+    expect(senderInfo["label"]).toBe("User");
+    expect(senderInfo["name"]).toBeUndefined();
+    expect(senderInfo["id"]).toBeUndefined();
+    expect(senderInfo["username"]).toBeUndefined();
   });
 });

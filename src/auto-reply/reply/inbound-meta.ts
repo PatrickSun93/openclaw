@@ -120,14 +120,12 @@ export function buildInboundUserContextPrefix(
   const conversationInfo = {
     message_id: shouldIncludeConversationInfo ? resolvedMessageId : undefined,
     reply_to_id: shouldIncludeConversationInfo ? safeTrim(ctx.ReplyToId) : undefined,
-    sender_id: shouldIncludeConversationInfo ? safeTrim(ctx.SenderId) : undefined,
+    sender_id: undefined,
     conversation_label: isDirect ? undefined : safeTrim(ctx.ConversationLabel),
-    sender: shouldIncludeConversationInfo
-      ? (safeTrim(ctx.SenderName) ??
-        safeTrim(ctx.SenderE164) ??
-        safeTrim(ctx.SenderId) ??
-        safeTrim(ctx.SenderUsername))
-      : undefined,
+    sender:
+      !isDirect && shouldIncludeConversationInfo
+        ? (safeTrim(ctx.SenderName) ?? safeTrim(ctx.SenderUsername))
+        : undefined,
     timestamp: timestampStr,
     group_subject: safeTrim(ctx.GroupSubject),
     group_channel: safeTrim(ctx.GroupChannel),
@@ -156,20 +154,30 @@ export function buildInboundUserContextPrefix(
     );
   }
 
-  const senderInfo = {
-    label: resolveSenderLabel({
+  // Direct chats: pseudonymous label only — no PII sent to AI (#60448).
+  // Group chats: keep display identifiers (name/username/tag) but suppress
+  // internal IDs and phone numbers.
+  const hasSenderIdentity = Boolean(
+    resolveSenderLabel({
       name: safeTrim(ctx.SenderName),
       username: safeTrim(ctx.SenderUsername),
       tag: safeTrim(ctx.SenderTag),
       e164: safeTrim(ctx.SenderE164),
       id: safeTrim(ctx.SenderId),
     }),
-    id: safeTrim(ctx.SenderId),
-    name: safeTrim(ctx.SenderName),
-    username: safeTrim(ctx.SenderUsername),
-    tag: safeTrim(ctx.SenderTag),
-    e164: safeTrim(ctx.SenderE164),
-  };
+  );
+  const senderInfo = isDirect
+    ? { label: (hasSenderIdentity ? "User" : null) as string | null }
+    : {
+        label: resolveSenderLabel({
+          name: safeTrim(ctx.SenderName),
+          username: safeTrim(ctx.SenderUsername),
+          tag: safeTrim(ctx.SenderTag),
+        }),
+        name: safeTrim(ctx.SenderName),
+        username: safeTrim(ctx.SenderUsername),
+        tag: safeTrim(ctx.SenderTag),
+      };
   if (senderInfo?.label) {
     blocks.push(
       ["Sender (untrusted metadata):", "```json", JSON.stringify(senderInfo, null, 2), "```"].join(
